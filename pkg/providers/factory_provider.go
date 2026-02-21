@@ -65,6 +65,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	}
 
 	protocol, modelID := ExtractProtocol(cfg.Model)
+	protocol, modelID = normalizeProtocolAlias(cfg, protocol, modelID)
 
 	switch protocol {
 	case "openai":
@@ -153,6 +154,20 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 	default:
 		return nil, "", fmt.Errorf("unknown protocol %q in model %q", protocol, cfg.Model)
 	}
+}
+
+// normalizeProtocolAlias handles model shorthand that appears in the wild.
+// Example: "z-ai/glm5" can be used with NVIDIA's OpenAI-compatible endpoint,
+// so we treat it as the nvidia protocol while preserving the full model ID.
+func normalizeProtocolAlias(cfg *config.ModelConfig, protocol, modelID string) (string, string) {
+	if protocol == "z-ai" || protocol == "z.ai" {
+		base := strings.ToLower(strings.TrimSpace(cfg.APIBase))
+		if base == "" || strings.Contains(base, "integrate.api.nvidia.com") {
+			return "nvidia", strings.TrimSpace(cfg.Model)
+		}
+	}
+
+	return protocol, modelID
 }
 
 // getDefaultAPIBase returns the default API base URL for a given protocol.
