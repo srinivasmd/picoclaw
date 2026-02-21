@@ -114,6 +114,59 @@ func TestProviderChat_HTTPError(t *testing.T) {
 	}
 }
 
+func TestProviderChat_RetriesWithV1On404(t *testing.T) {
+	called := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+		switch r.URL.Path {
+		case "/chat/completions":
+			http.Error(w, "404 page not found", http.StatusNotFound)
+		case "/v1/chat/completions":
+			resp := map[string]any{
+				"choices": []map[string]any{{
+					"message":       map[string]any{"content": "ok"},
+					"finish_reason": "stop",
+				}},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+		default:
+			http.Error(w, "not found", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL, "")
+	out, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if out.Content != "ok" {
+		t.Fatalf("Content = %q, want ok", out.Content)
+	}
+	if called != 2 {
+		t.Fatalf("request count = %d, want 2", called)
+	}
+}
+
+func TestProviderChat_NoRetryWhenV1AlreadyConfigured(t *testing.T) {
+	called := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+		http.Error(w, "404 page not found", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	p := NewProvider("key", server.URL+"/v1", "")
+	_, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "gpt-4o", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if called != 1 {
+		t.Fatalf("request count = %d, want 1", called)
+	}
+}
+
 func TestProviderChat_StripsMoonshotPrefixAndNormalizesKimiTemperature(t *testing.T) {
 	var requestBody map[string]any
 
