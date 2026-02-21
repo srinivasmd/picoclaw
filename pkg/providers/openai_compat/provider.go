@@ -116,25 +116,30 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", p.apiBase+"/chat/completions", bytes.NewReader(jsonData))
+	endpoint := p.chatCompletionsURL()
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
+	setHeaders(req, p.apiKey)
 
-	req.Header.Set("Content-Type", "application/json")
-	if p.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	resp, body, err := p.doRequest(req)
+	if err != nil {
+		return nil, err
 	}
 
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound && shouldRetryWithV1(p.apiBase) {
+		fallbackEndpoint := p.chatCompletionsV1URL()
+		fallbackReq, err := http.NewRequestWithContext(ctx, "POST", fallbackEndpoint, bytes.NewReader(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create fallback request: %w", err)
+		}
+		setHeaders(fallbackReq, p.apiKey)
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		resp, body, err = p.doRequest(fallbackReq)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -142,6 +147,47 @@ func (p *Provider) Chat(
 	}
 
 	return parseResponse(body)
+}
+
+func (p *Provider) doRequest(req *http.Request) (*http.Response, []byte, error) {
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	return resp, body, nil
+}
+
+func setHeaders(req *http.Request, apiKey string) {
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+}
+
+func (p *Provider) chatCompletionsURL() string {
+	if strings.HasSuffix(strings.ToLower(p.apiBase), "/chat/completions") {
+		return p.apiBase
+	}
+	return p.apiBase + "/chat/completions"
+}
+
+func (p *Provider) chatCompletionsV1URL() string {
+	base := strings.TrimRight(p.apiBase, "/")
+	return base + "/v1/chat/completions"
+}
+
+func shouldRetryWithV1(apiBase string) bool {
+	lowerBase := strings.ToLower(strings.TrimRight(apiBase, "/"))
+	if strings.HasSuffix(lowerBase, "/chat/completions") {
+		return false
+	}
+	return !strings.HasSuffix(lowerBase, "/v1")
 }
 
 func parseResponse(body []byte) (*LLMResponse, error) {
