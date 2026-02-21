@@ -229,6 +229,40 @@ func TestCreateProviderFromConfig_UnknownProtocol(t *testing.T) {
 	}
 }
 
+func TestCreateProviderFromConfig_ZAIAliasWithNVIDIA(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "glm5",
+		Model:     "z-ai/glm5",
+		APIKey:    "test-key",
+		APIBase:   "https://integrate.api.nvidia.com/v1",
+	}
+
+	provider, modelID, err := CreateProviderFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("CreateProviderFromConfig() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatal("CreateProviderFromConfig() returned nil provider")
+	}
+	if modelID != "z-ai/glm5" {
+		t.Errorf("modelID = %q, want %q", modelID, "z-ai/glm5")
+	}
+}
+
+func TestCreateProviderFromConfig_ZAIAliasUnknownBaseStillErrors(t *testing.T) {
+	cfg := &config.ModelConfig{
+		ModelName: "glm5",
+		Model:     "z-ai/glm5",
+		APIKey:    "test-key",
+		APIBase:   "https://example.com/v1",
+	}
+
+	_, _, err := CreateProviderFromConfig(cfg)
+	if err == nil {
+		t.Fatal("CreateProviderFromConfig() expected error for z-ai protocol with non-NVIDIA base")
+	}
+}
+
 func TestCreateProviderFromConfig_NilConfig(t *testing.T) {
 	_, _, err := CreateProviderFromConfig(nil)
 	if err == nil {
