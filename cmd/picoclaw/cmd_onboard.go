@@ -4,18 +4,14 @@
 package main
 
 import (
-	"embed"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 
+	workspaceassets "github.com/sipeed/picoclaw"
 	"github.com/sipeed/picoclaw/pkg/config"
 )
-
-//go:generate cp -r ../../workspace .
-//go:embed workspace
-var embeddedFiles embed.FS
 
 func onboard() {
 	configPath := getConfigPath()
@@ -60,7 +56,7 @@ func copyEmbeddedToTarget(targetDir string) error {
 	}
 
 	// Walk through all files in embed.FS
-	err := fs.WalkDir(embeddedFiles, "workspace", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(workspaceassets.FS, workspaceassets.Root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -71,12 +67,12 @@ func copyEmbeddedToTarget(targetDir string) error {
 		}
 
 		// Read embedded file
-		data, err := embeddedFiles.ReadFile(path)
+		data, err := workspaceassets.FS.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("Failed to read embedded file %s: %w", path, err)
 		}
 
-		new_path, err := filepath.Rel("workspace", path)
+		new_path, err := filepath.Rel(workspaceassets.Root, path)
 		if err != nil {
 			return fmt.Errorf("Failed to get relative path for %s: %v\n", path, err)
 		}
